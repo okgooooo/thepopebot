@@ -1,7 +1,10 @@
 'use client';
 
 import { useRef, useEffect, useCallback, useState } from 'react';
-import { SendIcon, StopIcon, PaperclipIcon, XIcon, FileTextIcon } from './icons.js';
+import { SendIcon, StopIcon, PaperclipIcon, XIcon, FileTextIcon, MicIcon } from './icons.js';
+import { useVoiceInput } from '../../voice/use-voice-input.js';
+import { getVoiceToken } from '../../voice/actions.js';
+import { VoiceBars } from './voice-bars.jsx';
 import { cn } from '../utils.js';
 
 const ACCEPTED_TYPES = [
@@ -37,11 +40,24 @@ function getEffectiveType(file) {
   return extMap[ext] || file.type || 'text/plain';
 }
 
-export function ChatInput({ input, setInput, onSubmit, status, stop, files, setFiles, disabled = false, placeholder = 'Send a message...', canSendOverride }) {
+export function ChatInput({ input, setInput, onSubmit, status, stop, files, setFiles, disabled = false, placeholder = 'Send a message...', canSendOverride, bare = false, className }) {
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
   const isStreaming = status === 'streaming' || status === 'submitted';
+  const volumeRef = useRef(0);
+
+  const { voiceAvailable, isConnecting, isRecording, startRecording, stopRecording } = useVoiceInput({
+    getToken: getVoiceToken,
+    onVolumeChange: (rms) => { volumeRef.current = rms; },
+    onTranscript: (text) => {
+      setInput((prev) => {
+        const needsSpace = prev && !prev.endsWith(' ');
+        return prev + (needsSpace ? ' ' : '') + text;
+      });
+    },
+    onError: (err) => console.error('[voice]', err),
+  });
 
   // Auto-resize textarea
   const adjustHeight = useCallback(() => {
@@ -119,24 +135,28 @@ export function ChatInput({ input, setInput, onSubmit, status, stop, files, setF
 
   // Disabled state — show locked message
   if (disabled && !isStreaming) {
-    return (
-      <div className="mx-auto w-full max-w-4xl px-4 pb-4 md:px-6">
-        <div className="flex flex-col rounded-xl border border-border bg-muted p-2">
-          <div className="flex items-center px-2 py-1.5">
-            <span className="text-sm text-muted-foreground">{placeholder}</span>
-          </div>
+    const disabledContent = (
+      <div className={cn("flex flex-col rounded-xl border border-border bg-muted p-2", className)}>
+        <div className="flex items-center px-2 py-1.5">
+          <span className="text-sm text-muted-foreground">{placeholder}</span>
         </div>
+      </div>
+    );
+    if (bare) return disabledContent;
+    return (
+      <div className="mx-auto w-full max-w-4xl px-1.5 pb-[max(1rem,var(--safe-area-bottom))] md:px-6">
+        {disabledContent}
       </div>
     );
   }
 
-  return (
-    <div className="mx-auto w-full max-w-4xl px-4 pb-4 md:px-6">
-      <form onSubmit={handleSubmit} className="relative">
-        <div
+  const formContent = (
+    <form onSubmit={handleSubmit} className="relative">
+      <div
           className={cn(
             'flex flex-col rounded-xl border bg-muted p-2 transition-colors',
-            isDragging ? 'border-primary bg-primary/5' : 'border-border'
+            isDragging ? 'border-primary bg-primary/5' : 'border-border',
+            className
           )}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -197,12 +217,14 @@ export function ChatInput({ input, setInput, onSubmit, status, stop, files, setF
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center justify-center rounded-lg p-2 text-muted-foreground hover:text-foreground"
+                className="inline-flex items-center justify-center rounded-lg p-2.5 text-muted-foreground hover:text-foreground"
                 aria-label="Attach files"
                 disabled={isStreaming}
               >
                 <PaperclipIcon size={16} />
               </button>
+
+              {voiceAvailable && <VoiceBars volumeRef={volumeRef} isRecording={isRecording} />}
 
               <input
                 ref={fileInputRef}
@@ -217,33 +239,59 @@ export function ChatInput({ input, setInput, onSubmit, status, stop, files, setF
               />
             </div>
 
-            {isStreaming ? (
-              <button
-                type="button"
-                onClick={stop}
-                className="inline-flex items-center justify-center rounded-lg bg-foreground p-2 text-background hover:opacity-80"
-                aria-label="Stop generating"
-              >
-                <StopIcon size={16} />
-              </button>
-            ) : (
-              <button
-                type="submit"
-                disabled={!canSend}
-                className={cn(
-                  'inline-flex items-center justify-center rounded-lg p-2',
-                  canSend
-                    ? 'bg-foreground text-background hover:opacity-80'
-                    : 'bg-muted-foreground/20 text-muted-foreground cursor-not-allowed'
-                )}
-                aria-label="Send message"
-              >
-                <SendIcon size={16} />
-              </button>
-            )}
+            <div className="flex items-center gap-1">
+              {isStreaming ? (
+                <button
+                  type="button"
+                  onClick={stop}
+                  className="inline-flex items-center justify-center rounded-lg bg-foreground p-2.5 text-background hover:opacity-80"
+                  aria-label="Stop generating"
+                >
+                  <StopIcon size={16} />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!canSend}
+                  className={cn(
+                    'inline-flex items-center justify-center rounded-lg p-2.5',
+                    canSend
+                      ? 'bg-foreground text-background hover:opacity-80'
+                      : 'bg-muted-foreground/20 text-muted-foreground cursor-not-allowed'
+                  )}
+                  aria-label="Send message"
+                >
+                  <SendIcon size={16} />
+                </button>
+              )}
+              {voiceAvailable && !isStreaming && (
+                <button
+                  type="button"
+                  onClick={isRecording ? stopRecording : startRecording}
+                  disabled={isConnecting}
+                  className={cn(
+                    'inline-flex items-center justify-center rounded-lg p-2.5',
+                    isConnecting
+                      ? 'bg-muted-foreground/20 text-muted-foreground cursor-wait animate-pulse'
+                      : isRecording
+                        ? 'bg-red-500 text-white hover:opacity-80'
+                        : 'bg-foreground text-background hover:opacity-80'
+                  )}
+                  aria-label={isConnecting ? 'Connecting...' : isRecording ? 'Stop recording' : 'Start voice input'}
+                >
+                  <MicIcon size={16} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
-      </form>
+    </form>
+  );
+
+  if (bare) return formContent;
+  return (
+    <div className="mx-auto w-full max-w-4xl px-1.5 pb-[max(1rem,var(--safe-area-bottom))] md:px-6">
+      {formContent}
     </div>
   );
 }

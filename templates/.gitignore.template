@@ -17,12 +17,6 @@ skills/*/node_modules/
 # Node
 node_modules/
 
-# Next.js
-.next/
-.next-new/
-.next-old/
-out/
-
 # OS files
 .DS_Store
 Thumbs.db
@@ -43,3 +37,10 @@ temp/
 
 # Data (SQLite memory, etc.)
 data/
+
+# Backups (created by init before overwriting managed files)
+.backups/
+
+# Custom docker-compose and Traefik config (local overrides, not managed)
+docker-compose.custom.yml
+traefik-dynamic.yml

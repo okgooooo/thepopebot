@@ -15,21 +15,83 @@ if [ -n "$REPO" ] && [ ! -d "/home/claude-code/workspace/.git" ]; then
 fi
 
 cd /home/claude-code/workspace
+<<<<<<< HEAD
 WORKSPACE_DIR=$(pwd)
 
+=======
+
+# Create or checkout feature branch
+if [ -n "$FEATURE_BRANCH" ]; then
+    if git rev-parse --verify "$FEATURE_BRANCH" >/dev/null 2>&1; then
+        # Branch exists locally (restart case) — just switch to it
+        git checkout "$FEATURE_BRANCH"
+    elif git ls-remote --heads origin "$FEATURE_BRANCH" | grep -q .; then
+        # Branch exists on remote (recreation case) — check it out with tracking
+        git checkout -b "$FEATURE_BRANCH" "origin/$FEATURE_BRANCH"
+    else
+        # Branch doesn't exist (first creation) — create and push
+        git checkout -b "$FEATURE_BRANCH"
+        git push -u origin "$FEATURE_BRANCH"
+    fi
+fi
+
+WORKSPACE_DIR=$(pwd)
+
+# Write chat context file if provided — raw JSON with framing text
+if [ -n "$CHAT_CONTEXT" ]; then
+    mkdir -p .claude
+    cat > .claude/chat-context.txt << 'CTXHEADER'
+The following is a previous planning conversation between the user and an AI assistant. The user has now switched to this interactive coding session to continue working on this task. Use this conversation as context.
+
+CTXHEADER
+    echo "$CHAT_CONTEXT" >> .claude/chat-context.txt
+fi
+
+>>>>>>> upstream/main
 # Claude Code auth — use OAuth token, not API key
 unset ANTHROPIC_API_KEY
 export CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN}"
 
 # Skip onboarding and trust dialogs
 mkdir -p ~/.claude
+<<<<<<< HEAD
 cat > ~/.claude/settings.json << 'EOF'
+=======
+
+if [ -f "${WORKSPACE_DIR}/.claude/chat-context.txt" ]; then
+    cat > ~/.claude/settings.json << SETTINGSEOF
+{
+  "theme": "dark",
+  "hasTrustDialogAccepted": true,
+  "skipDangerousModePermissionPrompt": true,
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat ${WORKSPACE_DIR}/.claude/chat-context.txt"
+          }
+        ]
+      }
+    ]
+  }
+}
+SETTINGSEOF
+else
+    cat > ~/.claude/settings.json << 'EOF'
+>>>>>>> upstream/main
 {
   "theme": "dark",
   "hasTrustDialogAccepted": true,
   "skipDangerousModePermissionPrompt": true
 }
 EOF
+<<<<<<< HEAD
+=======
+fi
+>>>>>>> upstream/main
 
 cat > ~/.claude.json << ENDJSON
 {

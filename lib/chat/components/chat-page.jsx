@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { AppSidebar } from './app-sidebar.js';
 import { Chat } from './chat.js';
 import { SidebarProvider, SidebarInset } from './ui/sidebar.js';
 import { ChatNavProvider } from './chat-nav-context.js';
-import { getChatMessages, getChatMeta, getWorkspace } from '../actions.js';
+import { getChatMessages, getChatData } from '../actions.js';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -25,9 +25,6 @@ export function ChatPage({ session, needsSetup, chatId }) {
   const navigateToChat = useCallback((id) => {
     if (id) {
       window.history.pushState({}, '', `/chat/${id}`);
-      setResolvedChatId(null);
-      setInitialMessages([]);
-      setWorkspace(null);
       setActiveChatId(id);
     } else {
       window.history.pushState({}, '', '/');
@@ -43,9 +40,6 @@ export function ChatPage({ session, needsSetup, chatId }) {
     const onPopState = () => {
       const match = window.location.pathname.match(/^\/chat\/(.+)/);
       if (match) {
-        setResolvedChatId(null);
-        setInitialMessages([]);
-        setWorkspace(null);
         setActiveChatId(match[1]);
       } else {
         setInitialMessages([]);
@@ -70,24 +64,41 @@ export function ChatPage({ session, needsSetup, chatId }) {
           window.history.replaceState({}, '', '/');
           return;
         }
-        const uiMessages = dbMessages.map((msg) => ({
-          id: msg.id,
-          role: msg.role,
-          content: msg.content,
-          parts: [{ type: 'text', text: msg.content }],
-          createdAt: new Date(msg.createdAt),
-        }));
+        const uiMessages = [];
+        for (const msg of dbMessages) {
+          let parts;
+          try {
+            const parsed = JSON.parse(msg.content);
+            if (parsed?.type === 'tool-invocation') {
+              parts = [parsed];
+            } else {
+              parts = [{ type: 'text', text: msg.content }];
+            }
+          } catch {
+            parts = [{ type: 'text', text: msg.content }];
+          }
+
+          // Merge consecutive assistant messages into one (matches streaming layout)
+          const prev = uiMessages[uiMessages.length - 1];
+          if (prev && prev.role === 'assistant' && msg.role === 'assistant') {
+            prev.parts.push(...parts);
+            prev.content += '\n' + msg.content;
+          } else {
+            uiMessages.push({
+              id: msg.id,
+              role: msg.role,
+              content: msg.content,
+              parts,
+              createdAt: new Date(msg.createdAt),
+            });
+          }
+        }
         setInitialMessages(uiMessages);
 
         // Check if this is a code chat
         try {
-          const meta = await getChatMeta(activeChatId);
-          if (meta?.codeWorkspaceId) {
-            const ws = await getWorkspace(meta.codeWorkspaceId);
-            setWorkspace(ws);
-          } else {
-            setWorkspace(null);
-          }
+          const chat = await getChatData(activeChatId);
+          setWorkspace(chat?.workspace || null);
         } catch {
           setWorkspace(null);
         }
@@ -97,12 +108,17 @@ export function ChatPage({ session, needsSetup, chatId }) {
     }
   }, [activeChatId]);
 
+  const contextValue = useMemo(
+    () => ({ activeChatId: activeChatId || resolvedChatId, navigateToChat }),
+    [activeChatId, resolvedChatId, navigateToChat]
+  );
+
   if (needsSetup || !session) {
     return null;
   }
 
   return (
-    <ChatNavProvider value={{ activeChatId: resolvedChatId, navigateToChat }}>
+    <ChatNavProvider value={contextValue}>
       <SidebarProvider>
         <AppSidebar user={session.user} />
         <SidebarInset>

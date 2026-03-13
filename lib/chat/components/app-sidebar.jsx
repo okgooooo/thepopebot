@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CirclePlusIcon, PanelLeftIcon, MessageIcon, BellIcon, SwarmIcon, ArrowUpCircleIcon, LifeBuoyIcon, GitPullRequestIcon } from './icons.js';
+import { CirclePlusIcon, PanelLeftIcon, MessageIcon, ClusterIcon, BellIcon, RunnersIcon, ArrowUpCircleIcon, LifeBuoyIcon, GitPullRequestIcon } from './icons.js';
 import { getUnreadNotificationCount, getPullRequestCount, getAppVersion } from '../actions.js';
 import { SidebarHistory } from './sidebar-history.js';
 import { SidebarUserNav } from './sidebar-user-nav.js';
@@ -18,8 +18,10 @@ import {
 } from './ui/sidebar.js';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip.js';
 import { useChatNav } from './chat-nav-context.js';
+import { useFeatures } from './features-context.js';
 
 export function AppSidebar({ user }) {
+  const features = useFeatures();
   const { navigateToChat } = useChatNav();
   const { state, open, setOpenMobile, toggleSidebar } = useSidebar();
   const collapsed = state === 'collapsed';
@@ -65,19 +67,13 @@ export function AppSidebar({ user }) {
           {!collapsed && (
             <span className="px-2 font-semibold text-lg">ThePopeBot{version && <span className="text-[11px] font-normal text-muted-foreground"> v{version}</span>}</span>
           )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                className="inline-flex shrink-0 items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-background hover:text-foreground"
-                onClick={toggleSidebar}
-              >
-                <PanelLeftIcon size={16} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side={collapsed ? 'right' : 'bottom'}>
-              {collapsed ? 'Open sidebar' : 'Close sidebar'}
-            </TooltipContent>
-          </Tooltip>
+          <button
+            className="inline-flex shrink-0 items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-background hover:text-foreground"
+            onClick={toggleSidebar}
+            aria-label="Toggle sidebar"
+          >
+            <PanelLeftIcon size={16} />
+          </button>
         </div>
 
         <SidebarMenu>
@@ -103,165 +99,186 @@ export function AppSidebar({ user }) {
               )}
             </Tooltip>
           </SidebarMenuItem>
-
-          {/* Chats history */}
-          <SidebarMenuItem>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <SidebarMenuButton
-                  href="/chats"
-                  className={collapsed ? 'justify-center' : ''}
-                >
-                  <MessageIcon size={16} />
-                  {!collapsed && <span>Chats</span>}
-                </SidebarMenuButton>
-              </TooltipTrigger>
-              {collapsed && (
-                <TooltipContent side="right">Chats</TooltipContent>
-              )}
-            </Tooltip>
-          </SidebarMenuItem>
-
-          {/* Swarm */}
-          <SidebarMenuItem>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <SidebarMenuButton
-                  href="/swarm"
-                  className={collapsed ? 'justify-center' : ''}
-                >
-                  <SwarmIcon size={16} />
-                  {!collapsed && <span>Swarm</span>}
-                </SidebarMenuButton>
-              </TooltipTrigger>
-              {collapsed && (
-                <TooltipContent side="right">Swarm</TooltipContent>
-              )}
-            </Tooltip>
-          </SidebarMenuItem>
-
-          {/* Notifications */}
-          <SidebarMenuItem>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <SidebarMenuButton
-                  href="/notifications"
-                  className={collapsed ? 'justify-center' : ''}
-                >
-                  <BellIcon size={16} />
-                  {!collapsed && (
-                    <span className="flex items-center gap-2">
-                      Notifications
-                      {unreadCount > 0 && (
-                        <span className="inline-flex items-center justify-center rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-medium leading-none text-destructive-foreground">
-                          {unreadCount}
-                        </span>
-                      )}
-                    </span>
-                  )}
-                  {collapsed && unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-medium text-destructive-foreground">
-                      {unreadCount}
-                    </span>
-                  )}
-                </SidebarMenuButton>
-              </TooltipTrigger>
-              {collapsed && (
-                <TooltipContent side="right">Notifications</TooltipContent>
-              )}
-            </Tooltip>
-          </SidebarMenuItem>
-
-          {/* Pending Changes */}
-          <SidebarMenuItem>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <SidebarMenuButton
-                  href="/pull-requests"
-                  className={collapsed ? 'justify-center' : ''}
-                >
-                  <GitPullRequestIcon size={16} />
-                  {!collapsed && (
-                    <span className="flex items-center gap-2">
-                      Pending Changes
-                      {prCount > 0 && (
-                        <span className="inline-flex items-center justify-center rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-medium leading-none text-destructive-foreground">
-                          {prCount}
-                        </span>
-                      )}
-                    </span>
-                  )}
-                  {collapsed && prCount > 0 && (
-                    <span className="absolute -top-1 -right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-medium text-destructive-foreground">
-                      {prCount}
-                    </span>
-                  )}
-                </SidebarMenuButton>
-              </TooltipTrigger>
-              {collapsed && (
-                <TooltipContent side="right">Pending Changes</TooltipContent>
-              )}
-            </Tooltip>
-          </SidebarMenuItem>
-
-          {/* Upgrade (only when update is available) */}
-          {updateAvailable && (
-            <SidebarMenuItem>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <SidebarMenuButton
-                    className={collapsed ? 'justify-center' : ''}
-                    onClick={() => setUpgradeOpen(true)}
-                  >
-                    <span className="relative">
-                      <ArrowUpCircleIcon size={16} />
-                      {collapsed && (
-                        <span className="absolute -top-1 -right-1 inline-block h-2 w-2 rounded-full bg-emerald-500" />
-                      )}
-                    </span>
-                    {!collapsed && (
-                      <span className="flex items-center gap-2">
-                        Upgrade
-                        <span className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-medium leading-none text-white">
-                          v{updateAvailable}
-                        </span>
-                      </span>
-                    )}
-                  </SidebarMenuButton>
-                </TooltipTrigger>
-                {collapsed && (
-                  <TooltipContent side="right">Upgrade to v{updateAvailable}</TooltipContent>
-                )}
-              </Tooltip>
-            </SidebarMenuItem>
-          )}
-
-          {/* Support */}
-          <SidebarMenuItem>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <SidebarMenuButton
-                  href="https://www.skool.com/ai-architects"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={collapsed ? 'justify-center' : ''}
-                >
-                  <LifeBuoyIcon size={16} />
-                  {!collapsed && <span>Support</span>}
-                </SidebarMenuButton>
-              </TooltipTrigger>
-              {collapsed && (
-                <TooltipContent side="right">Support</TooltipContent>
-              )}
-            </Tooltip>
-          </SidebarMenuItem>
-
         </SidebarMenu>
       </SidebarHeader>
 
       {!collapsed && (
         <SidebarContent>
-          <div className="mx-4 mb-1 border-t border-border" />
+          <SidebarMenu>
+            {/* Chats history */}
+            <SidebarMenuItem>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SidebarMenuButton
+                    href="/chats"
+                    className={collapsed ? 'justify-center' : ''}
+                  >
+                    <MessageIcon size={16} />
+                    {!collapsed && <span>Chats</span>}
+                  </SidebarMenuButton>
+                </TooltipTrigger>
+                {collapsed && (
+                  <TooltipContent side="right">Chats</TooltipContent>
+                )}
+              </Tooltip>
+            </SidebarMenuItem>
+
+            {/* Clusters */}
+            {features?.clusterWorkspace && (
+            <SidebarMenuItem>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SidebarMenuButton
+                    href="/clusters"
+                    className={collapsed ? 'justify-center' : ''}
+                  >
+                    <ClusterIcon size={16} />
+                    {!collapsed && <span>Clusters</span>}
+                  </SidebarMenuButton>
+                </TooltipTrigger>
+                {collapsed && (
+                  <TooltipContent side="right">Clusters</TooltipContent>
+                )}
+              </Tooltip>
+            </SidebarMenuItem>
+            )}
+
+            {/* Runners */}
+            <SidebarMenuItem>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SidebarMenuButton
+                    href="/runners"
+                    className={collapsed ? 'justify-center' : ''}
+                  >
+                    <RunnersIcon size={16} />
+                    {!collapsed && <span>Runners</span>}
+                  </SidebarMenuButton>
+                </TooltipTrigger>
+                {collapsed && (
+                  <TooltipContent side="right">Runners</TooltipContent>
+                )}
+              </Tooltip>
+            </SidebarMenuItem>
+
+            {/* Pending Changes */}
+            <SidebarMenuItem>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SidebarMenuButton
+                    href="/pull-requests"
+                    className={collapsed ? 'justify-center' : ''}
+                  >
+                    <GitPullRequestIcon size={16} />
+                    {!collapsed && (
+                      <span className="flex items-center gap-2">
+                        Approvals
+                        {prCount > 0 && (
+                          <span className="inline-flex items-center justify-center rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-medium leading-none text-destructive-foreground">
+                            {prCount}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {collapsed && prCount > 0 && (
+                      <span className="absolute -top-1 -right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-medium text-destructive-foreground">
+                        {prCount}
+                      </span>
+                    )}
+                  </SidebarMenuButton>
+                </TooltipTrigger>
+                {collapsed && (
+                  <TooltipContent side="right">Approvals</TooltipContent>
+                )}
+              </Tooltip>
+            </SidebarMenuItem>
+
+            {/* Notifications */}
+            <SidebarMenuItem>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SidebarMenuButton
+                    href="/notifications"
+                    className={collapsed ? 'justify-center' : ''}
+                  >
+                    <BellIcon size={16} />
+                    {!collapsed && (
+                      <span className="flex items-center gap-2">
+                        Notifications
+                        {unreadCount > 0 && (
+                          <span className="inline-flex items-center justify-center rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-medium leading-none text-destructive-foreground">
+                            {unreadCount}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {collapsed && unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-medium text-destructive-foreground">
+                        {unreadCount}
+                      </span>
+                    )}
+                  </SidebarMenuButton>
+                </TooltipTrigger>
+                {collapsed && (
+                  <TooltipContent side="right">Notifications</TooltipContent>
+                )}
+              </Tooltip>
+            </SidebarMenuItem>
+
+            {/* Upgrade (only when update is available) */}
+            {updateAvailable && (
+              <SidebarMenuItem>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <SidebarMenuButton
+                      className={collapsed ? 'justify-center' : ''}
+                      onClick={() => setUpgradeOpen(true)}
+                    >
+                      <span className="relative">
+                        <ArrowUpCircleIcon size={16} />
+                        {collapsed && (
+                          <span className="absolute -top-1 -right-1 inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                        )}
+                      </span>
+                      {!collapsed && (
+                        <span className="flex items-center gap-2">
+                          Upgrade
+                          <span className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-1.5 py-0.5 text-[10px] font-medium leading-none text-white">
+                            v{updateAvailable}
+                          </span>
+                        </span>
+                      )}
+                    </SidebarMenuButton>
+                  </TooltipTrigger>
+                  {collapsed && (
+                    <TooltipContent side="right">Upgrade to v{updateAvailable}</TooltipContent>
+                  )}
+                </Tooltip>
+              </SidebarMenuItem>
+            )}
+
+            {/* Support */}
+            <SidebarMenuItem>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SidebarMenuButton
+                    href="https://www.skool.com/ai-architects"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={collapsed ? 'justify-center' : ''}
+                  >
+                    <LifeBuoyIcon size={16} />
+                    {!collapsed && <span>Support</span>}
+                  </SidebarMenuButton>
+                </TooltipTrigger>
+                {collapsed && (
+                  <TooltipContent side="right">Support</TooltipContent>
+                )}
+              </Tooltip>
+            </SidebarMenuItem>
+          </SidebarMenu>
+
+          <div className="mx-4 border-t border-border" />
           <SidebarHistory />
         </SidebarContent>
       )}

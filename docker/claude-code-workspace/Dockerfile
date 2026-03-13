@@ -48,6 +48,12 @@ RUN useradd -m -s /bin/bash claude-code \
 COPY .tmux.conf /home/claude-code/.tmux.conf
 RUN chown claude-code:claude-code /home/claude-code/.tmux.conf
 
+<<<<<<< HEAD
+=======
+COPY commands/ /home/claude-code/.claude/commands/
+RUN chown -R claude-code:claude-code /home/claude-code/.claude
+
+>>>>>>> upstream/main
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

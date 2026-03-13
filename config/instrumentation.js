@@ -43,6 +43,14 @@ export async function register() {
   const { initDatabase } = await import('../lib/db/index.js');
   initDatabase();
 
+  // Migrate env vars to DB on first run (idempotent)
+  try {
+    const { migrateEnvToDb } = await import('../lib/db/config.js');
+    migrateEnvToDb();
+  } catch (err) {
+    console.warn('Config migration:', err.message);
+  }
+
   // Start cron scheduler
   const { loadCrons } = await import('../lib/cron.js');
   loadCrons();
@@ -57,6 +65,10 @@ export async function register() {
     const stored = getAvailableVersion();
     if (stored) setUpdateAvailable(stored);
   } catch {}
+
+  // Start cluster worker runtime (crons + webhook registration)
+  const { startClusterRuntime } = await import('../lib/cluster/runtime.js');
+  startClusterRuntime();
 
   console.log('thepopebot initialized');
 }

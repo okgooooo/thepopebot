@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { SidebarHistoryItem } from './sidebar-history-item.js';
 import { SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu } from './ui/sidebar.js';
 import { useChatNav } from './chat-nav-context.js';
 import { getChats, deleteChat, renameChat, starChat } from '../actions.js';
 import { cn } from '../utils.js';
 import { MessageIcon, CodeIcon } from './icons.js';
+import { useFeatures } from './features-context.js';
 
 function groupChatsByDate(chats) {
   const now = new Date();
@@ -46,27 +47,29 @@ function groupChatsByDate(chats) {
   return groups;
 }
 
-const FILTERS = [
+const BASE_FILTERS = [
   { value: 'all', label: 'All', icon: null },
   { value: 'chat', label: 'Chat', icon: MessageIcon },
-  { value: 'code', label: 'Code', icon: CodeIcon },
 ];
+const CODE_FILTER = { value: 'code', label: 'Code', icon: CodeIcon };
 
 function ChatTypeFilter({ filter, setFilter }) {
+  const features = useFeatures();
+  const filters = features?.codeWorkspace ? [...BASE_FILTERS, CODE_FILTER] : BASE_FILTERS;
   return (
-    <div className="flex items-center gap-0.5 px-2 mb-1">
-      {FILTERS.map(({ value, label, icon: Icon }) => (
+    <div className="flex items-center gap-0.5 px-2 pt-2 mb-1">
+      {filters.map(({ value, label, icon: Icon }) => (
         <button
           key={value}
           onClick={() => setFilter(value)}
           className={cn(
-            'flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium transition-colors',
+            'flex items-center gap-1 rounded-md px-2.5 py-1 text-[0.8rem] md:text-xs font-medium transition-colors',
             filter === value
               ? 'bg-background text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
           )}
         >
-          {Icon && <Icon size={12} />}
+          {Icon && <Icon size={14} />}
           {label}
         </button>
       ))}
@@ -74,21 +77,27 @@ function ChatTypeFilter({ filter, setFilter }) {
   );
 }
 
-const isCodeChat = (chat) => Boolean(chat.codeWorkspaceId && chat.containerName);
+const isCodeChat = (chat) => Boolean(chat.codeWorkspaceId);
 
 export function SidebarHistory() {
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState(() => {
-    try { const v = localStorage.getItem('sidebar-chat-filter'); return v === 'chat' || v === 'code' ? v : 'all'; } catch { return 'all'; }
-  });
+  const [filter, setFilter] = useState('all');
   const updateFilter = (v) => { setFilter(v); try { localStorage.setItem('sidebar-chat-filter', v); } catch {} };
   const { activeChatId, navigateToChat } = useChatNav();
 
+  const [hasMore, setHasMore] = useState(false);
+
   const loadChats = async () => {
     try {
-      const result = await getChats();
-      setChats(result);
+      const result = await getChats(51);
+      if (result.length > 50) {
+        setChats(result.slice(0, 50));
+        setHasMore(true);
+      } else {
+        setChats(result);
+        setHasMore(false);
+      }
     } catch (err) {
       console.error('Failed to load chats:', err);
     } finally {
@@ -96,22 +105,51 @@ export function SidebarHistory() {
     }
   };
 
-  // Load chats on mount and refresh when navigating between pages
+  // Sync filter from localStorage on mount (useLayoutEffect prevents flash)
+  useLayoutEffect(() => {
+    try {
+      const v = localStorage.getItem('sidebar-chat-filter');
+      if (v === 'chat' || v === 'code') setFilter(v);
+    } catch {}
+  }, []);
+
+  // Load chats on mount
   useEffect(() => {
     loadChats();
-  }, [activeChatId]);
+  }, []);
 
-  // Reload when chats change (new chat created or title updated)
   useEffect(() => {
-    const handler = () => loadChats();
-    window.addEventListener('chatsupdated', handler);
-    return () => window.removeEventListener('chatsupdated', handler);
+    const titleHandler = (e) => {
+      const { chatId, title, codeWorkspaceId } = e.detail;
+      setChats(prev => {
+        const exists = prev.some(c => c.id === chatId);
+        if (exists) return prev.map(c => c.id === chatId ? { ...c, title } : c);
+        return [{ id: chatId, title, starred: 0, updatedAt: new Date().toISOString(), codeWorkspaceId: codeWorkspaceId || null }, ...prev];
+      });
+    };
+    const starHandler = (e) => {
+      const { chatId, starred } = e.detail;
+      setChats(prev => prev.map(c => c.id === chatId ? { ...c, starred } : c));
+    };
+    const deleteHandler = (e) => {
+      const { chatId } = e.detail;
+      setChats(prev => prev.filter(c => c.id !== chatId));
+    };
+    window.addEventListener('chatTitleUpdated', titleHandler);
+    window.addEventListener('chatStarUpdated', starHandler);
+    window.addEventListener('chatDeleted', deleteHandler);
+    return () => {
+      window.removeEventListener('chatTitleUpdated', titleHandler);
+      window.removeEventListener('chatStarUpdated', starHandler);
+      window.removeEventListener('chatDeleted', deleteHandler);
+    };
   }, []);
 
   const handleDelete = async (chatId) => {
     setChats((prev) => prev.filter((c) => c.id !== chatId));
     const { success } = await deleteChat(chatId);
     if (success) {
+      window.dispatchEvent(new CustomEvent('chatDeleted', { detail: { chatId } }));
       if (chatId === activeChatId) {
         navigateToChat(null);
       }
@@ -121,11 +159,16 @@ export function SidebarHistory() {
   };
 
   const handleStar = async (chatId) => {
+    const newStarred = chats.find(c => c.id === chatId)?.starred ? 0 : 1;
     setChats((prev) =>
-      prev.map((c) => (c.id === chatId ? { ...c, starred: c.starred ? 0 : 1 } : c))
+      prev.map((c) => (c.id === chatId ? { ...c, starred: newStarred } : c))
     );
     const { success } = await starChat(chatId);
-    if (!success) loadChats();
+    if (success) {
+      window.dispatchEvent(new CustomEvent('chatStarUpdated', { detail: { chatId, starred: newStarred } }));
+    } else {
+      loadChats();
+    }
   };
 
   const handleRename = async (chatId, title) => {
@@ -133,21 +176,31 @@ export function SidebarHistory() {
       prev.map((c) => (c.id === chatId ? { ...c, title } : c))
     );
     const { success } = await renameChat(chatId, title);
-    if (!success) loadChats();
+    if (success) {
+      window.dispatchEvent(new CustomEvent('chatTitleUpdated', { detail: { chatId, title } }));
+    } else {
+      loadChats();
+    }
   };
 
   if (loading && chats.length === 0) {
     return (
-      <SidebarGroup>
-        <SidebarGroupContent>
-          <ChatTypeFilter filter={filter} setFilter={updateFilter} />
-          <div className="flex flex-col gap-2 px-2">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-8 animate-pulse rounded-md bg-border/50" />
-            ))}
-          </div>
-        </SidebarGroupContent>
-      </SidebarGroup>
+      <>
+        <SidebarGroup className="sticky top-0 z-10 bg-muted">
+          <SidebarGroupContent>
+            <ChatTypeFilter filter={filter} setFilter={updateFilter} />
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <div className="flex flex-col gap-2 px-2">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="h-8 animate-pulse rounded-md bg-border/50" />
+              ))}
+            </div>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </>
     );
   }
 
@@ -163,7 +216,7 @@ export function SidebarHistory() {
     );
   }
 
-  const filteredChats = filter === 'all' ? chats
+  const filteredChats = !filter || filter === 'all' ? chats
     : filter === 'code' ? chats.filter(isCodeChat)
     : chats.filter((c) => !isCodeChat(c));
   const grouped = groupChatsByDate(filteredChats);
@@ -172,7 +225,7 @@ export function SidebarHistory() {
 
   return (
     <>
-      <SidebarGroup>
+      <SidebarGroup className="sticky top-0 z-10 bg-muted">
         <SidebarGroupContent>
           <ChatTypeFilter filter={filter} setFilter={updateFilter} />
         </SidebarGroupContent>
@@ -181,7 +234,7 @@ export function SidebarHistory() {
         Object.entries(grouped).map(
           ([label, groupChats]) =>
             groupChats.length > 0 && (
-              <SidebarGroup key={label}>
+              <SidebarGroup key={label} className="pt-1">
                 <SidebarGroupLabel>{label}</SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
@@ -206,6 +259,19 @@ export function SidebarHistory() {
             <p className="px-4 py-2 text-sm text-muted-foreground">
               No {filter === 'code' ? 'code' : 'chat'} chats yet.
             </p>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      )}
+      {hasMore && (
+        <SidebarGroup className="pt-0">
+          <SidebarGroupContent>
+            <a
+              href="/chats"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <MessageIcon size={14} />
+              All Chats
+            </a>
           </SidebarGroupContent>
         </SidebarGroup>
       )}

@@ -12,20 +12,7 @@ const __dirname = path.dirname(__filename);
 const command = process.argv[2];
 const args = process.argv.slice(3);
 
-// Files tightly coupled to the package version that are auto-updated by init.
-// These live in the user's project because GitHub/Docker require them at specific paths,
-// but they shouldn't drift from the package version.
-const MANAGED_PATHS = [
-  '.github/workflows/',
-  'docker/event-handler/',
-  'docker-compose.yml',
-  '.dockerignore',
-  'CLAUDE.md',
-];
-
-function isManaged(relPath) {
-  return MANAGED_PATHS.some(p => relPath === p || relPath.startsWith(p));
-}
+import { MANAGED_PATHS, isManaged } from './managed-paths.js';
 
 // Files that must never be scaffolded directly (use .template suffix instead).
 const EXCLUDED_FILENAMES = ['CLAUDE.md'];
@@ -69,9 +56,11 @@ Commands:
   reset-auth                        Regenerate AUTH_SECRET (invalidates all sessions)
   reset [file]                      Restore a template file (or list available templates)
   diff [file]                       Show differences between project files and package templates
+  sync <path>                       Sync local package to a test install (build, pack, Docker)
   set-agent-secret <KEY> [VALUE]    Set a GitHub secret with AGENT_ prefix (also updates .env)
   set-agent-llm-secret <KEY> [VALUE]  Set a GitHub secret with AGENT_LLM_ prefix
   set-var <KEY> [VALUE]             Set a GitHub repository variable
+  user:password <email>             Change a user's password
 `);
 }
 
@@ -143,6 +132,31 @@ async function init() {
   const skipped = [];
   const changed = [];
   const updated = [];
+  const backedUp = [];
+
+  let backupDir = null;
+  function getBackupDir() {
+    if (!backupDir) {
+      const now = new Date();
+      const ts = now.getFullYear().toString()
+        + String(now.getMonth() + 1).padStart(2, '0')
+        + String(now.getDate()).padStart(2, '0')
+        + '-'
+        + String(now.getHours()).padStart(2, '0')
+        + String(now.getMinutes()).padStart(2, '0')
+        + String(now.getSeconds()).padStart(2, '0');
+      backupDir = path.join(cwd, '.backups', ts);
+    }
+    return backupDir;
+  }
+
+  function backupFile(filePath, relPath) {
+    const bd = getBackupDir();
+    const dest = path.join(bd, relPath);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(filePath, dest);
+    backedUp.push(relPath);
+  }
 
   for (const relPath of templateFiles) {
     const src = path.join(templatesDir, relPath);
@@ -162,7 +176,8 @@ async function init() {
       if (srcContent.equals(destContent)) {
         skipped.push(outPath);
       } else if (!noManaged && isManaged(outPath)) {
-        // Managed file differs — auto-update to match package
+        // Managed file differs — back up before overwriting
+        backupFile(dest, outPath);
         fs.mkdirSync(path.dirname(dest), { recursive: true });
         fs.copyFileSync(src, dest);
         updated.push(outPath);
@@ -171,6 +186,55 @@ async function init() {
         changed.push(outPath);
         console.log(`  Skipped ${outPath} (already exists)`);
       }
+    }
+  }
+
+  // Delete stale files in managed directories that no longer exist in templates
+  if (!noManaged) {
+    const deleted = [];
+    const managedDirs = MANAGED_PATHS.filter(p => p.endsWith('/'));
+    for (const managedDir of managedDirs) {
+      const userDir = path.join(cwd, managedDir);
+      if (!fs.existsSync(userDir)) continue;
+
+      // Walk the user's managed directory
+      function walkUser(dir) {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            walkUser(fullPath);
+          } else {
+            const relPath = path.relative(cwd, fullPath);
+            // Check if a corresponding template exists
+            const tmplPath = templatePath(relPath, templatesDir);
+            const templateExists = fs.existsSync(path.join(templatesDir, tmplPath));
+            if (!templateExists) {
+              backupFile(fullPath, relPath);
+              fs.unlinkSync(fullPath);
+              deleted.push(relPath);
+              console.log(`  Deleted ${relPath} (stale managed file)`);
+            }
+          }
+        }
+      }
+      walkUser(userDir);
+
+      // Remove empty directories left behind
+      function removeEmptyDirs(dir) {
+        if (!fs.existsSync(dir)) return;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            removeEmptyDirs(path.join(dir, entry.name));
+          }
+        }
+        // Re-read after potential child removals
+        if (fs.readdirSync(dir).length === 0) {
+          fs.rmdirSync(dir);
+        }
+      }
+      removeEmptyDirs(userDir);
     }
   }
 
@@ -184,22 +248,12 @@ async function init() {
       name: dirName,
       private: true,
       scripts: {
-        dev: 'next dev --turbopack',
-        build: 'next build',
-        start: 'next start',
         setup: 'thepopebot setup',
         'setup-telegram': 'thepopebot setup-telegram',
         'reset-auth': 'thepopebot reset-auth',
       },
       dependencies: {
         thepopebot: thepopebotDep,
-        next: '^15.5.12',
-        'next-auth': '5.0.0-beta.30',
-        'next-themes': '^0.4.0',
-        react: '^19.0.0',
-        'react-dom': '^19.0.0',
-        tailwindcss: '^4.0.0',
-        '@tailwindcss/postcss': '^4.0.0',
       },
     };
     fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
@@ -209,7 +263,7 @@ async function init() {
   }
 
   // Create .gitkeep files for empty dirs
-  const gitkeepDirs = ['cron', 'triggers', 'logs', 'tmp', 'data'];
+  const gitkeepDirs = ['cron', 'triggers', 'logs', 'tmp', 'data', 'data/clusters'];
   for (const dir of gitkeepDirs) {
     const gitkeep = path.join(cwd, dir, '.gitkeep');
     if (!fs.existsSync(gitkeep)) {
@@ -244,6 +298,11 @@ async function init() {
     fs.mkdirSync(path.dirname(claudeSkillsLink), { recursive: true });
     createDirLink('../skills/active', claudeSkillsLink);
     console.log('  Created .claude/skills → ../skills/active');
+  }
+
+  // Report backed-up files
+  if (backedUp.length > 0) {
+    console.log(`\n  Backed up ${backedUp.length} file(s) to ${path.relative(cwd, backupDir)}/`);
   }
 
   // Report updated managed files
@@ -285,6 +344,10 @@ async function init() {
 AUTH_SECRET=${authSecret}
 AUTH_TRUST_HOST=true
 THEPOPEBOT_VERSION=${version}
+
+# Uncomment to use a custom docker-compose file that won't be overwritten by upgrades.
+# Edit docker-compose.custom.yml with your changes, then uncomment:
+# COMPOSE_FILE=docker-compose.custom.yml
 `;
     fs.writeFileSync(envPath, seedEnv);
     console.log(`  Created .env (AUTH_SECRET, THEPOPEBOT_VERSION=${version})`);
@@ -549,24 +612,6 @@ async function upgrade() {
     process.exit(1);
   }
 
-  // --- Clear .next ---
-  try {
-    fs.rmSync(path.join(cwd, '.next'), { recursive: true, force: true });
-  } catch {}
-
-  // --- Build ---
-  console.log('\n  Building...\n');
-  try {
-    execSync('npm run build', { stdio: 'inherit', cwd });
-  } catch {
-    console.error('\n  Build failed. The upgrade has been applied but the project does not build.');
-    console.error('  Fix the build errors, then run:\n');
-    console.error(`    npm run build`);
-    console.error(`    git add -A && git commit -m "upgrade thepopebot to ${targetVersion}"`);
-    console.error('    git push\n');
-    process.exit(1);
-  }
-
   // --- Commit upgrade ---
   const changes = execSync('git status --porcelain', { encoding: 'utf8', cwd }).trim();
   if (changes) {
@@ -595,8 +640,8 @@ async function upgrade() {
     try {
       const running = execSync('docker compose ps --status running -q', { encoding: 'utf8', cwd }).trim();
       if (running) {
-        console.log('  Restarting Docker containers...\n');
-        execSync('docker compose down && docker compose up -d', { stdio: 'inherit', cwd });
+        console.log('  Pulling new image and restarting Docker containers...\n');
+        execSync('docker compose pull event-handler && docker compose up -d --force-recreate event-handler', { stdio: 'inherit', cwd });
       }
     } catch {
       // Docker not available or not running — skip
@@ -744,6 +789,38 @@ async function setVar(key, value) {
   }
 }
 
+async function userPassword(email) {
+  if (!email) {
+    console.error('\n  Usage: thepopebot user:password <email>\n');
+    process.exit(1);
+  }
+
+  const { password, isCancel } = await import('@clack/prompts');
+  const newPassword = await password({
+    message: 'New password:',
+    validate: (input) => {
+      if (!input) return 'Password is required';
+      if (input.length < 8) return 'Password must be at least 8 characters';
+    },
+  });
+  if (isCancel(newPassword)) {
+    console.log('\nCancelled.\n');
+    process.exit(0);
+  }
+
+  const { initDatabase } = await import('../lib/db/index.js');
+  initDatabase();
+  const { updateUserPassword } = await import('../lib/db/users.js');
+
+  const updated = updateUserPassword(email, newPassword);
+  if (updated) {
+    console.log(`\n  Password updated for ${email}.\n`);
+  } else {
+    console.error(`\n  No user found with email: ${email}\n`);
+    process.exit(1);
+  }
+}
+
 switch (command) {
   case 'init':
     await init();
@@ -767,6 +844,11 @@ switch (command) {
   case 'update':
     await upgrade();
     break;
+  case 'sync': {
+    const { sync } = await import('./sync.js');
+    await sync(args[0]);
+    break;
+  }
   case 'set-agent-secret':
     await setAgentSecret(args[0], args[1]);
     break;
@@ -775,6 +857,9 @@ switch (command) {
     break;
   case 'set-var':
     await setVar(args[0], args[1]);
+    break;
+  case 'user:password':
+    await userPassword(args[0]);
     break;
   default:
     printUsage();

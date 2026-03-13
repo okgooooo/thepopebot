@@ -1,10 +1,17 @@
-# Why thepopebot?
+# ThePopeBot
 
-**The repository IS the agent** — Every action your agent takes is a git commit. You can see exactly what it did, when, and why. If it screws up, revert it. Want to clone your agent? Fork the repo — code, personality, scheduled jobs, full history, all of it goes with your fork.
+Build autonomous AI agents that work for you 24/7, individually or in teams.
 
-**Free compute, built in** — Every GitHub account comes with free cloud computing time. thepopebot uses that to run your agent. One task or a hundred in parallel — the compute is already included.
+### What You Get
 
-**Self-evolving** — The agent modifies its own code through pull requests. Every change is auditable, every change is reversible. You stay in control.
+- **Runs 24/7** — set up tasks and your agent handles them around the clock, no babysitting
+- **Does real work** — writes code, opens pull requests, completes multi-step tasks end to end
+- **Agent clusters** — build teams of agents that coordinate and work together on bigger jobs
+- **Full visibility** — every action is a commit you can review, approve, or undo
+
+<a href="https://www.skool.com/ai-architects"><img src="docs/hero.png" width="100" alt="ThePopeBot" /></a>
+
+[Get priority support HERE](https://www.skool.com/ai-architects)
 
 ---
 
@@ -23,7 +30,7 @@
 │           │                           ▼                              │
 │           │                  ┌─────────────────┐                     │
 │           │                  │  Docker Agent   │                     │
-│           │                  │  (runs Pi, PRs) │                     │
+│           │                  │(Pi/Claude Code) │                     │
 │           │                  └────────┬────────┘                     │
 │           │                           │                              │
 │           │                           3 (creates PR)                 │
@@ -166,112 +173,7 @@ Pushing to `main` triggers the `rebuild-event-handler.yml` workflow on your serv
 
 > **Upgrade failed?** See [Recovering from a Failed Upgrade](docs/UPGRADE.md#recovering-from-a-failed-upgrade).
 
-### Understanding `init`
-
-#### How your project is structured
-
-When you ran `thepopebot init` the first time, it scaffolded a project folder with two kinds of files:
-
-**Your files** — These are yours to customize. `init` will never overwrite them:
-
-| Files | What they do |
-|-------|-------------|
-| `config/SOUL.md`, `JOB_PLANNING.md`, `JOB_AGENT.md`, etc. | Your agent's personality, behavior, and prompts |
-| `config/CRONS.json`, `TRIGGERS.json` | Your scheduled jobs and webhook triggers |
-| `app/` | Next.js pages and UI components |
-| `docker/pi-coding-agent-job/` | The Dockerfile for the Pi coding agent job container |
-
-**Managed files** — These are infrastructure files that need to stay in sync with the package version. `init` auto-updates them for you:
-
-| Files | What they do |
-|-------|-------------|
-| `.github/workflows/` | GitHub Actions that run jobs, auto-merge PRs, rebuild on deploy |
-| `docker-compose.yml` | Defines how your containers run together (Traefik, event handler, runner) |
-| `docker/event-handler/` | The Dockerfile for the event handler container |
-| `.dockerignore` | Keeps unnecessary files out of Docker builds |
-| `CLAUDE.md` | AI assistant context for your project |
-
-#### What happens when you run `init`
-
-1. **Managed files** are updated automatically to match the new package version
-2. **Your files** are left alone — but if the package ships new defaults (e.g., a new field in `CRONS.json`), `init` lets you know:
-
-```
-Updated templates available:
-These files differ from the current package templates.
-
-  config/CRONS.json
-
-To view differences:  npx thepopebot diff <file>
-To reset to default:  npx thepopebot reset <file>
-```
-
-You can review at your own pace:
-
-```bash
-npx thepopebot diff config/CRONS.json    # see what changed
-npx thepopebot reset config/CRONS.json   # accept the new template
-```
-
-#### If you've modified managed files
-
-If you've made custom changes to managed files (e.g., added extra steps to a GitHub Actions workflow), use `--no-managed` so `init` doesn't overwrite your changes:
-
-```bash
-npx thepopebot init --no-managed
-```
-
-#### Template file conventions
-
-The `templates/` directory contains files scaffolded into user projects by `thepopebot init`. Two naming conventions handle files that npm or AI tools would otherwise misinterpret:
-
-**`.template` suffix** — Files ending in `.template` are scaffolded with the suffix stripped. This is used for files that npm mangles (`.gitignore`) or that AI tools would pick up as real project docs (`CLAUDE.md`).
-
-| In `templates/` | Scaffolded as |
-|-----------------|---------------|
-| `.gitignore.template` | `.gitignore` |
-| `CLAUDE.md.template` | `CLAUDE.md` |
-| `api/CLAUDE.md.template` | `api/CLAUDE.md` |
-
-**`CLAUDE.md` exclusion** — The scaffolding walker skips any file named `CLAUDE.md` (without the `.template` suffix). This is a safety net so a bare `CLAUDE.md` accidentally added to `templates/` never gets copied into user projects where AI tools would confuse it with real project instructions.
-
----
-
-## CLI Commands
-
-All commands are run via `npx thepopebot <command>` (or the `npm run` shortcuts where noted).
-
-**Project setup:**
-
-| Command | Description |
-|---------|-------------|
-| `init` | Scaffold a new project, or update templates in an existing one |
-| `setup` | Run the full interactive setup wizard (`npm run setup`) |
-| `setup-telegram` | Reconfigure the Telegram webhook (`npm run setup-telegram`) |
-| `reset-auth` | Regenerate AUTH_SECRET, invalidating all sessions |
-
-**Templates:**
-
-| Command | Description |
-|---------|-------------|
-| `diff [file]` | List files that differ from package templates, or diff a specific file |
-| `reset [file]` | List all template files, or restore a specific one to package default |
-
-**Secrets & variables:**
-
-These commands set individual GitHub repository secrets/variables using the `gh` CLI. They read `GH_OWNER` and `GH_REPO` from your `.env`. If VALUE is omitted, you'll be prompted with masked input (keeps secrets out of shell history).
-
-| Command | Description |
-|---------|-------------|
-| `set-agent-secret KEY [VALUE]` | Set `AGENT_<KEY>` GitHub secret and update `.env` |
-| `set-agent-llm-secret KEY [VALUE]` | Set `AGENT_LLM_<KEY>` GitHub secret |
-| `set-var KEY [VALUE]` | Set a GitHub repository variable |
-
-GitHub secrets use a prefix convention so the workflow can route them correctly:
-
-- **`AGENT_`** — Protected secrets passed to the Docker container (filtered from LLM). Example: `AGENT_GH_TOKEN`, `AGENT_ANTHROPIC_API_KEY`
-- **`AGENT_LLM_`** — LLM-accessible secrets (not filtered). Example: `AGENT_LLM_BRAVE_API_KEY`
-- **No prefix** — Workflow-only secrets, never passed to container. Example: `GH_WEBHOOK_SECRET`
+See [CLI Reference](docs/CLI.md) for full details on `init`, managed vs user files, template conventions, and all CLI commands.
 
 ---
 
@@ -283,11 +185,11 @@ See [Security](docs/SECURITY.md) for full details on what's exposed, the risks, 
 
 ---
 
-## Running Different Models
+## Different Models
 
 The Event Handler (chat, Telegram, webhooks) and Jobs (Docker agent) are two independent layers — each can run a different LLM. Use Claude for interactive chat and a cheaper or local model for long-running jobs, mix providers per cron entry, or run everything on a single model.
 
-See [Running Different Models](docs/RUNNING_DIFFERENT_MODELS.md) for the full guide: Event Handler config, job defaults, per-job overrides, provider table, and custom provider setup.
+See [Different Models](docs/RUNNING_DIFFERENT_MODELS.md) for the full guide: Event Handler config, job defaults, per-job overrides, provider table, and custom provider setup.
 
 ---
 
@@ -296,15 +198,20 @@ See [Running Different Models](docs/RUNNING_DIFFERENT_MODELS.md) for the full gu
 | Document | Description |
 |----------|-------------|
 | [Architecture](docs/ARCHITECTURE.md) | Two-layer design, file structure, API endpoints, GitHub Actions, Docker agent |
+| [CLI Reference](docs/CLI.md) | `init`, managed vs user files, template conventions, all CLI commands |
 | [Configuration](docs/CONFIGURATION.md) | Environment variables, GitHub secrets, repo variables, ngrok, Telegram setup |
 | [Customization](docs/CUSTOMIZATION.md) | Personality, skills, operating system files, using your bot, security details |
 | [Chat Integrations](docs/CHAT_INTEGRATIONS.md) | Web chat, Telegram, adding new channels |
-| [Running Different Models](docs/RUNNING_DIFFERENT_MODELS.md) | Event Handler vs job model config, per-job overrides, providers, custom provider |
+| [Different Models](docs/RUNNING_DIFFERENT_MODELS.md) | Event Handler vs job model config, per-job overrides, providers, custom provider |
 | [Auto-Merge](docs/AUTO_MERGE.md) | Auto-merge controls, ALLOWED_PATHS configuration |
 | [Deployment](docs/DEPLOYMENT.md) | VPS setup, Docker Compose, HTTPS with Let's Encrypt |
 | [Claude Code vs Pi](docs/CLAUDE_CODE_VS_PI.md) | Comparing the two agent backends (subscription vs API credits) |
 | [How to Build Skills](docs/HOW_TO_BUILD_SKILLS.md) | Guide to building and activating agent skills |
 | [Pre-Release](docs/PRE_RELEASE.md) | Installing beta/alpha builds |
+| [Code Workspaces](docs/CODE_WORKSPACES.md) | Interactive Docker containers with in-browser terminal |
+| [Clusters](docs/CLUSTERS.md) | Agent clusters — groups of Docker containers spawned from role definitions |
+| [Hacks](docs/HACKS.md) | Tips, tricks, and workarounds |
+| [Mobile Testing](docs/MOBILE_TESTING.md) | Testing on mobile devices |
 | [Security](docs/SECURITY.md) | Security disclaimer, local development risks |
 | [Upgrading](docs/UPGRADE.md) | Automated upgrades, recovering from failed upgrades |
 

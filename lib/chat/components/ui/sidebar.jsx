@@ -1,10 +1,10 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { cn } from '../../utils.js';
 import { Sheet, SheetContent } from './sheet.js';
 
-const SIDEBAR_WIDTH = '16rem';
+const SIDEBAR_WIDTH = '15rem';
 const SIDEBAR_WIDTH_ICON = '3rem';
 const SIDEBAR_WIDTH_MOBILE = '18rem';
 const SIDEBAR_COOKIE_NAME = 'sidebar:state';
@@ -77,6 +77,28 @@ export function SidebarProvider({
 
   const state = open ? 'expanded' : 'collapsed';
 
+  // Swipe from left edge to open sidebar on mobile
+  const edgeTouchStart = useRef(null);
+
+  const handleEdgeTouchStart = useCallback((e) => {
+    if (!isMobile || openMobile) return;
+    const x = e.touches[0].clientX;
+    // Only trigger from the left 24px edge
+    if (x <= 24) {
+      edgeTouchStart.current = { x, y: e.touches[0].clientY };
+    }
+  }, [isMobile, openMobile]);
+
+  const handleEdgeTouchEnd = useCallback((e) => {
+    if (!edgeTouchStart.current) return;
+    const endX = e.changedTouches[0].clientX;
+    const deltaX = endX - edgeTouchStart.current.x;
+    if (deltaX > 60) {
+      setOpenMobile(true);
+    }
+    edgeTouchStart.current = null;
+  }, [setOpenMobile]);
+
   const contextValue = useMemo(
     () => ({
       state,
@@ -100,6 +122,8 @@ export function SidebarProvider({
           '--sidebar-width-mobile': SIDEBAR_WIDTH_MOBILE,
         }}
         data-sidebar-state={state}
+        onTouchStart={handleEdgeTouchStart}
+        onTouchEnd={handleEdgeTouchEnd}
       >
         {children}
       </div>
@@ -126,7 +150,7 @@ export function Sidebar({ children, className, side = 'left' }) {
   return (
     <div
       className={cn(
-        'sticky top-0 flex h-svh flex-col border-r border-border bg-muted transition-[width] duration-200',
+        'sticky top-0 hidden md:flex h-svh flex-col border-r border-border bg-muted transition-[width] duration-200',
         open ? 'w-[var(--sidebar-width)]' : 'w-[var(--sidebar-width-icon)]',
         className
       )}
@@ -144,19 +168,19 @@ export function Sidebar({ children, className, side = 'left' }) {
 }
 
 export function SidebarHeader({ children, className }) {
-  return <div className={cn('flex flex-col gap-2 p-2', className)}>{children}</div>;
+  return <div className={cn('flex flex-col gap-2 p-2 md:px-1', className)}>{children}</div>;
 }
 
 export function SidebarContent({ children, className }) {
   return (
-    <div className={cn('flex min-h-0 flex-1 flex-col overflow-y-auto', className)}>
+    <div className={cn('flex min-h-0 flex-1 flex-col overflow-y-auto scrollbar-thin', className)}>
       {children}
     </div>
   );
 }
 
 export function SidebarFooter({ children, className }) {
-  return <div className={cn('flex flex-col gap-2 p-2', className)}>{children}</div>;
+  return <div className={cn('flex flex-col gap-2 p-2 md:px-2', className)}>{children}</div>;
 }
 
 export function SidebarMenu({ children, className }) {
@@ -186,7 +210,7 @@ export function SidebarMenuButton({ children, className, isActive, asChild, tool
 }
 
 export function SidebarGroup({ children, className }) {
-  return <div className={cn('relative flex w-full min-w-0 flex-col p-2', className)}>{children}</div>;
+  return <div className={cn('relative flex w-full min-w-0 flex-col p-2 md:px-1', className)}>{children}</div>;
 }
 
 export function SidebarGroupLabel({ children, className }) {
@@ -208,7 +232,7 @@ export function SidebarGroupContent({ children, className }) {
 
 export function SidebarInset({ children, className }) {
   return (
-    <main className={cn('relative flex min-h-svh flex-1 flex-col bg-background', className)}>
+    <main className={cn('relative flex min-h-svh flex-1 flex-col bg-background overflow-x-hidden', className)}>
       {children}
     </main>
   );
@@ -219,7 +243,7 @@ export function SidebarTrigger({ className, ...props }) {
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center rounded-md p-2 text-foreground hover:bg-muted',
+        'inline-flex items-center justify-center rounded-md p-2 min-h-[44px] min-w-[44px] text-foreground hover:bg-muted',
         className
       )}
       onClick={toggleSidebar}

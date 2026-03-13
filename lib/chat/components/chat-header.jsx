@@ -6,7 +6,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { ConfirmDialog } from './ui/confirm-dialog.js';
 import { RenameDialog } from './ui/rename-dialog.jsx';
 import { ChevronDownIcon, StarIcon, StarFilledIcon, PencilIcon, TrashIcon } from './icons.js';
-import { getChatMeta, getChatMetaByWorkspace, renameChat, deleteChat, starChat } from '../actions.js';
+import { getChatData, getChatDataByWorkspace, renameChat, deleteChat, starChat } from '../actions.js';
 import { useChatNav } from './chat-nav-context.js';
 
 export function ChatHeader({ chatId: chatIdProp, workspaceId }) {
@@ -28,23 +28,23 @@ export function ChatHeader({ chatId: chatIdProp, workspaceId }) {
 
   const fetchMeta = useCallback(() => {
     if (workspaceId) {
-      getChatMetaByWorkspace(workspaceId)
-        .then((meta) => {
-          if (meta?.title && meta.title !== 'New Chat') {
-            setTitle(meta.title);
-            setStarred(meta.starred || 0);
-            setResolvedChatId(meta.chatId);
+      getChatDataByWorkspace(workspaceId)
+        .then((data) => {
+          if (data?.title && data.title !== 'New Chat') {
+            setTitle(data.title);
+            setStarred(data.starred || 0);
+            setResolvedChatId(data.chatId);
           }
         })
         .catch(() => {});
       return;
     }
     if (!chatIdProp) return;
-    getChatMeta(chatIdProp)
-      .then((meta) => {
-        if (meta?.title && meta.title !== 'New Chat') {
-          setTitle(meta.title);
-          setStarred(meta.starred || 0);
+    getChatData(chatIdProp)
+      .then((data) => {
+        if (data?.title && data.title !== 'New Chat') {
+          setTitle(data.title);
+          setStarred(data.starred || 0);
         }
       })
       .catch(() => {});
@@ -52,10 +52,23 @@ export function ChatHeader({ chatId: chatIdProp, workspaceId }) {
 
   useEffect(() => {
     fetchMeta();
-    const handler = () => fetchMeta();
-    window.addEventListener('chatsupdated', handler);
-    return () => window.removeEventListener('chatsupdated', handler);
-  }, [fetchMeta]);
+    const titleHandler = (e) => {
+      if (e.detail.chatId === chatId) {
+        setTitle(e.detail.title);
+      }
+    };
+    const starHandler = (e) => {
+      if (e.detail.chatId === chatId) {
+        setStarred(e.detail.starred);
+      }
+    };
+    window.addEventListener('chatTitleUpdated', titleHandler);
+    window.addEventListener('chatStarUpdated', starHandler);
+    return () => {
+      window.removeEventListener('chatTitleUpdated', titleHandler);
+      window.removeEventListener('chatStarUpdated', starHandler);
+    };
+  }, [fetchMeta, chatId]);
 
   // Auto-focus and select all when entering inline edit mode
   useEffect(() => {
@@ -76,7 +89,7 @@ export function ChatHeader({ chatId: chatIdProp, workspaceId }) {
     if (!trimmed || trimmed === title) return;
     setTitle(trimmed);
     await renameChat(chatId, trimmed);
-    window.dispatchEvent(new Event('chatsupdated'));
+    window.dispatchEvent(new CustomEvent('chatTitleUpdated', { detail: { chatId, title: trimmed } }));
   };
 
   const cancelEdit = () => {
@@ -86,26 +99,26 @@ export function ChatHeader({ chatId: chatIdProp, workspaceId }) {
   const handleRenameFromDialog = async (newTitle) => {
     setTitle(newTitle);
     await renameChat(chatId, newTitle);
-    window.dispatchEvent(new Event('chatsupdated'));
+    window.dispatchEvent(new CustomEvent('chatTitleUpdated', { detail: { chatId, title: newTitle } }));
   };
 
   const handleStar = async () => {
     const newStarred = starred ? 0 : 1;
     setStarred(newStarred);
     await starChat(chatId);
-    window.dispatchEvent(new Event('chatsupdated'));
+    window.dispatchEvent(new CustomEvent('chatStarUpdated', { detail: { chatId, starred: newStarred } }));
   };
 
   const handleDelete = async () => {
     setShowDeleteConfirm(false);
     await deleteChat(chatId);
-    window.dispatchEvent(new Event('chatsupdated'));
+    window.dispatchEvent(new CustomEvent('chatDeleted', { detail: { chatId } }));
     nav?.navigateToChat?.(null);
   };
 
   return (
     <>
-      <header className="sticky top-0 flex items-center gap-2 bg-background px-2 py-1.5 md:px-2 z-10">
+      <header className="sticky top-0 flex items-center gap-2 bg-background px-2 py-1.5 md:px-2 z-10 min-w-0">
         {/* Mobile-only: open sidebar sheet */}
         <div className="md:hidden">
           <SidebarTrigger />
@@ -122,10 +135,10 @@ export function ChatHeader({ chatId: chatIdProp, workspaceId }) {
               if (e.key === 'Escape') cancelEdit();
             }}
             onBlur={saveEdit}
-            className="text-base font-medium text-foreground bg-background rounded-md border border-ring px-2 py-0.5 outline-none ring-2 ring-ring/30"
+            className="text-base font-medium text-foreground bg-background rounded-md border border-ring px-2 py-0.5 outline-none ring-2 ring-ring/30 min-w-0 w-full"
           />
         ) : showControls ? (
-          <div className="group/title flex items-center gap-0.5 rounded-md px-1.5 py-0.5 hover:bg-muted transition-colors">
+          <div className="group/title flex items-center gap-0.5 rounded-md px-1.5 py-0.5 hover:bg-muted transition-colors min-w-0">
             <h1
               className="text-base font-medium text-muted-foreground truncate cursor-pointer"
               onClick={enterEditMode}
@@ -138,7 +151,7 @@ export function ChatHeader({ chatId: chatIdProp, workspaceId }) {
                   <ChevronDownIcon size={14} />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
+              <DropdownMenuContent align="end" className="min-w-[150px]">
                 <DropdownMenuItem onClick={handleStar}>
                   {starred ? <StarFilledIcon size={14} /> : <StarIcon size={14} />}
                   <span>{starred ? 'Unstar' : 'Star'}</span>

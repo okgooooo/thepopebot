@@ -13,11 +13,11 @@ export function withThepopebot(nextConfig = {}) {
   return {
     ...nextConfig,
     distDir: process.env.NEXT_BUILD_DIR || '.next',
-    env: {
-      ...nextConfig.env,
-      NEXT_PUBLIC_CODE_WORKSPACE: process.env.CLAUDE_CODE_OAUTH_TOKEN && process.env.BETA ? 'true' : '',
-    },
-    serverExternalPackages: [
+    transpilePackages: [
+      'thepopebot',
+      ...(nextConfig.transpilePackages || []),
+    ],
+serverExternalPackages: [
       ...(nextConfig.serverExternalPackages || []),
       'better-sqlite3',
       'drizzle-orm',

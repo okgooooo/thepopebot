@@ -166,7 +166,7 @@ export function BellIcon({ size = 16 }) {
   );
 }
 
-export function SwarmIcon({ size = 16 }) {
+export function RunnersIcon({ size = 16 }) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -179,10 +179,8 @@ export function SwarmIcon({ size = 16 }) {
       width={size}
       height={size}
     >
-      {/* Three hexagons in a triangular cluster */}
-      <path d="M9.5 2L12 4.5L9.5 7L5 7L2.5 4.5L5 2Z" />
-      <path d="M19 2L21.5 4.5L19 7L14.5 7L12 4.5L14.5 2Z" />
-      <path d="M14.25 7L16.75 9.5L14.25 12L9.75 12L7.25 9.5L9.75 7Z" />
+      <circle cx="12" cy="12" r="10" />
+      <polygon points="10 8 16 12 10 16 10 8" />
     </svg>
   );
 }
@@ -706,6 +704,87 @@ export function CodeIcon({ size = 16 }) {
       <polyline points="16 18 22 12 16 6" />
       <polyline points="8 6 2 12 8 18" />
       <line x1="14" x2="10" y1="4" y2="20" />
+    </svg>
+  );
+}
+
+export function MicIcon({ size = 16 }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      width={size}
+      height={size}
+    >
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 10a7 7 0 0 0 14 0" />
+      <path d="M12 17v5" />
+      <path d="M8 22h8" />
+    </svg>
+  );
+}
+
+export function UserIcon({ size = 16 }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      width={size}
+      height={size}
+    >
+      <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
+}
+
+export function ClusterIcon({ size = 16 }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      width={size}
+      height={size}
+    >
+      <rect x="1" y="1" width="8" height="8" rx="1.5" />
+      <rect x="15" y="1" width="8" height="8" rx="1.5" />
+      <rect x="8" y="15" width="8" height="8" rx="1.5" />
+      <path d="M5 9v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9" />
+      <path d="M12 12v3" />
+    </svg>
+  );
+}
+
+export function TerminalIcon({ size = 16 }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      width={size}
+      height={size}
+    >
+      <polyline points="4 17 10 11 4 5" />
+      <line x1="12" x2="20" y1="19" y2="19" />
     </svg>
   );
 }

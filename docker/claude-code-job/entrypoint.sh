@@ -49,6 +49,7 @@ for skill_dir in /job/skills/active/*/; do
     fi
 done
 
+<<<<<<< HEAD
 # Start Chrome if puppeteer installed it (needed by browser-tools skill)
 CHROME_PID=""
 CHROME_BIN=$(find /home/agent/.cache/puppeteer -name "chrome" -type f 2>/dev/null | head -1)
@@ -57,6 +58,10 @@ if [ -n "$CHROME_BIN" ]; then
     CHROME_PID=$!
     sleep 2
 fi
+=======
+# Register Playwright MCP server (browser automation via native Claude Code tools)
+claude mcp add --transport stdio playwright -- npx -y @playwright/mcp@latest --headless --browser chromium
+>>>>>>> upstream/main
 
 # Setup logs
 LOG_DIR="/job/logs/${JOB_ID}"
@@ -128,11 +133,14 @@ git commit -m "done." || true
 git push origin
 set -e
 
+<<<<<<< HEAD
 # Cleanup Chrome
 if [ -n "$CHROME_PID" ]; then
     kill $CHROME_PID 2>/dev/null || true
 fi
 
+=======
+>>>>>>> upstream/main
 # Create PR with log permalink (auto-merge handled by GitHub Actions workflow)
 REPO_SLUG=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 LOG_URL="https://github.com/${REPO_SLUG}/tree/${LOG_SHA}/logs/${JOB_ID}"

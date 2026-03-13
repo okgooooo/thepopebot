@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Streamdown } from 'streamdown';
 import { cn } from '../utils.js';
 import { SpinnerIcon, FileTextIcon, CopyIcon, CheckIcon, RefreshIcon, SquarePenIcon, WrenchIcon, XIcon, ChevronDownIcon } from './icons.js';
+import { getToolDisplayName } from './tool-names.js';
 
 function LinkSafetyModal({ url, isOpen, onClose, onConfirm }) {
   const [copied, setCopied] = useState(false);
@@ -31,8 +32,7 @@ function LinkSafetyModal({ url, isOpen, onClose, onConfirm }) {
       onClick={onClose}
     >
       <div
-        className="relative mx-4 flex w-full flex-col gap-3 rounded-lg border border-border bg-background p-4 shadow-lg"
-        style={{ maxWidth: '340px' }}
+        className="relative mx-4 flex w-full flex-col gap-3 rounded-lg border border-border bg-background p-4 shadow-lg max-w-[340px]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="font-medium text-sm text-foreground">Open external link?</div>
@@ -63,19 +63,6 @@ export const linkSafety = {
   enabled: true,
   renderModal: (props) => <LinkSafetyModal {...props} />,
 };
-
-const TOOL_DISPLAY_NAMES = {
-  create_job: 'Create Job',
-  get_job_status: 'Check Job Status',
-  get_system_technical_specs: 'Read Tech Docs',
-  get_skill_building_guide: 'Read Skill Docs',
-  start_coding: 'Start Coding',
-  get_repository_details: 'Get Repository Details',
-};
-
-function getToolDisplayName(toolName) {
-  return TOOL_DISPLAY_NAMES[toolName] || toolName.replace(/_/g, ' ');
-}
 
 function formatContent(content) {
   if (content == null) return null;
@@ -182,6 +169,7 @@ function ToolCall({ part }) {
 
 export function PreviewMessage({ message, isLoading, onRetry, onEdit }) {
   const isUser = message.role === 'user';
+  const isSystem = message.role === 'system';
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState('');
@@ -201,6 +189,15 @@ export function PreviewMessage({ message, isLoading, onRetry, onEdit }) {
   const imageParts = fileParts.filter((p) => p.mediaType?.startsWith('image/'));
   const otherFileParts = fileParts.filter((p) => !p.mediaType?.startsWith('image/'));
   const hasToolParts = message.parts?.some((p) => p.type?.startsWith('tool-')) || false;
+
+  // System messages render as a subtle info banner
+  if (isSystem) {
+    return (
+      <div className="w-full px-4 py-2 rounded-md bg-muted/50 border border-border/50">
+        <p className="text-xs text-muted-foreground whitespace-pre-wrap">{text}</p>
+      </div>
+    );
+  }
 
   const handleCopy = async () => {
     try {
@@ -372,13 +369,13 @@ export function PreviewMessage({ message, isLoading, onRetry, onEdit }) {
             {!isLoading && text && (
               <div
                 className={cn(
-                  'flex gap-1 mt-1 opacity-0 transition-opacity group-hover:opacity-100',
+                  'flex gap-1 mt-1 opacity-100 md:opacity-0 transition-opacity md:group-hover:opacity-100',
                   isUser ? 'justify-end' : 'justify-start'
                 )}
               >
                 <button
                   onClick={handleCopy}
-                  className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-muted"
+                  className="rounded-md p-2 md:p-1 text-muted-foreground hover:text-foreground hover:bg-muted"
                   aria-label="Copy message"
                 >
                   {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
@@ -386,7 +383,7 @@ export function PreviewMessage({ message, isLoading, onRetry, onEdit }) {
                 {onRetry && (
                   <button
                     onClick={() => onRetry(message)}
-                    className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-muted"
+                    className="rounded-md p-2 md:p-1 text-muted-foreground hover:text-foreground hover:bg-muted"
                     aria-label="Retry"
                   >
                     <RefreshIcon size={14} />
@@ -395,7 +392,7 @@ export function PreviewMessage({ message, isLoading, onRetry, onEdit }) {
                 {isUser && onEdit && (
                   <button
                     onClick={handleEditStart}
-                    className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-muted"
+                    className="rounded-md p-2 md:p-1 text-muted-foreground hover:text-foreground hover:bg-muted"
                     aria-label="Edit message"
                   >
                     <SquarePenIcon size={14} />

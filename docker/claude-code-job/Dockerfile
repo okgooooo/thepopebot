@@ -5,10 +5,13 @@ RUN apt-get update && apt-get install -y \
     jq \
     curl \
     procps \
+<<<<<<< HEAD
     libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
     libcups2 libdrm2 libdbus-1-3 libxkbcommon0 \
     libatspi2.0-0 libxcomposite1 libxdamage1 libxfixes3 \
     libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 \
+=======
+>>>>>>> upstream/main
     && rm -rf /var/lib/apt/lists/*
 
 # Install GitHub CLI
@@ -28,6 +31,16 @@ RUN useradd -m -s /bin/bash agent \
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+<<<<<<< HEAD
+=======
+# Install Playwright Chromium + system deps at build time (used by Playwright MCP)
+# PLAYWRIGHT_BROWSERS_PATH puts browsers in a shared location so the non-root
+# `agent` user can find what root installed during build.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
+RUN npx -y playwright install --with-deps chromium \
+    && chown -R agent:agent /opt/pw-browsers
+
+>>>>>>> upstream/main
 USER agent
 WORKDIR /job
 

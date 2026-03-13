@@ -4,14 +4,15 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
-import open from 'open';
 import * as clack from '@clack/prompts';
 
 import { createDirLink } from './lib/fs-utils.mjs';
+import { initDatabase } from '../lib/db/index.js';
 
 import {
   checkPrerequisites,
   runGhAuth,
+  ghEnv,
 } from './lib/prerequisites.mjs';
 import {
   promptForPAT,
@@ -24,6 +25,7 @@ import {
   pressEnter,
   maskSecret,
   keepOrReconfigure,
+  openOrShowURL,
 } from './lib/prompts.mjs';
 import { PROVIDERS } from './lib/providers.mjs';
 import {
@@ -143,6 +145,16 @@ async function main() {
     initSpinner.stop('Git repo initialized');
   }
 
+  // Set git identity from GitHub if not configured
+  try { execSync('git config user.name', { stdio: 'ignore' }); } catch {
+    try {
+      const ghUser = JSON.parse(execSync('gh api user', { encoding: 'utf-8', env: ghEnv() }));
+      execSync(`git config --global user.name "${ghUser.name || ghUser.login}"`, { stdio: 'ignore' });
+      execSync(`git config --global user.email "${ghUser.login}@users.noreply.github.com"`, { stdio: 'ignore' });
+      clack.log.success('Git identity set from GitHub');
+    } catch {}
+  }
+
   if (prereqs.git.remoteInfo) {
     owner = prereqs.git.remoteInfo.owner;
     repo = prereqs.git.remoteInfo.repo;
@@ -181,11 +193,10 @@ async function main() {
     clack.log.info('  2. Do NOT initialize with a README');
     clack.log.info('  3. Copy the HTTPS URL');
 
-    const openGitHub = await confirm('Open GitHub repo creation page in browser?');
-    if (openGitHub) {
-      await open(`https://github.com/new?name=${encodeURIComponent(projectName)}&visibility=private`);
-      clack.log.info('Opened in browser (name and private pre-filled).');
-    }
+    await openOrShowURL(
+      `https://github.com/new?name=${encodeURIComponent(projectName)}&visibility=private`,
+      'GitHub repo creation page'
+    );
 
     // Ask for the remote URL and add it
     let remoteAdded = false;
@@ -258,13 +269,41 @@ async function main() {
     );
   }
 
+  // Docker check (informational — needed for Step 7)
+  if (prereqs.docker.installed) {
+    if (prereqs.docker.running) {
+      clack.log.success('Docker installed and running');
+    } else {
+      clack.log.warn('Docker installed but daemon is not running. You\'ll need it for Step 7 (Start Server).');
+      clack.log.info('Make sure the Docker daemon is started before then.');
+    }
+  } else {
+    clack.log.warn('Docker not installed (needed to run the server)');
+    clack.log.info('Install Docker: https://docs.docker.com/get-docker/');
+  }
+
+  // Initialize database (needed for storing secrets)
+  try {
+    initDatabase();
+  } catch (err) {
+    clack.log.warn(`Database init: ${err.message}`);
+  }
+
   // ─── Step 2: GitHub PAT ──────────────────────────────────────────────
   clack.log.step(`[${++currentStep}/${TOTAL_STEPS}] GitHub Personal Access Token`);
   clack.log.info('Your agent needs permission to create branches and pull requests in your GitHub repo. A Personal Access Token (PAT) grants this access.');
 
+  // Check DB first for existing GH_TOKEN, then fall back to .env
+  let existingGhToken = null;
+  try {
+    const { getConfigSecret } = await import('../lib/db/config.js');
+    existingGhToken = getConfigSecret('GH_TOKEN');
+  } catch {}
+  if (!existingGhToken) existingGhToken = env?.GH_TOKEN || null;
+
   let pat = null;
-  if (await keepOrReconfigure('GitHub PAT', env?.GH_TOKEN ? maskSecret(env.GH_TOKEN) : null)) {
-    pat = env.GH_TOKEN;
+  if (await keepOrReconfigure('GitHub PAT', existingGhToken ? maskSecret(existingGhToken) : null)) {
+    pat = existingGhToken;
   }
 
   if (!pat) {
@@ -276,14 +315,11 @@ async function main() {
       '  Contents: Read and write\n' +
       '  Metadata: Read-only (required, auto-selected)\n' +
       '  Pull requests: Read and write\n' +
+      '  Secrets: Read and write (required for managing agent secrets from UI)\n' +
       '  Workflows: Read and write'
     );
 
-    const openPATPage = await confirm('Open GitHub PAT creation page in browser?');
-    if (openPATPage) {
-      await open(getPATCreationURL());
-      clack.log.info(`Opened in browser. Scope it to ${owner}/${repo} only.`);
-    }
+    await openOrShowURL(getPATCreationURL(), 'GitHub PAT creation page');
 
     let patValid = false;
     while (!patValid) {
@@ -361,38 +397,64 @@ async function main() {
   let agentProvider = null;
   let agentModel = null;
 
+  // Check DB for existing LLM config, fall back to .env
+  let existingLlmProvider = null;
+  let existingLlmModel = null;
+  try {
+    const { getConfigValue } = await import('../lib/db/config.js');
+    existingLlmProvider = getConfigValue('LLM_PROVIDER');
+    existingLlmModel = getConfigValue('LLM_MODEL');
+  } catch {}
+  if (!existingLlmProvider) existingLlmProvider = env?.LLM_PROVIDER || null;
+  if (!existingLlmModel) existingLlmModel = env?.LLM_MODEL || null;
+
   // Build display string for existing LLM config
   let llmDisplay = null;
-  if (env?.LLM_PROVIDER && env?.LLM_MODEL) {
-    const existingEnvKey = env.LLM_PROVIDER === 'custom'
+  if (existingLlmProvider && existingLlmModel) {
+    const existingEnvKey = existingLlmProvider === 'custom'
       ? 'CUSTOM_API_KEY'
-      : PROVIDERS[env.LLM_PROVIDER]?.envKey;
+      : PROVIDERS[existingLlmProvider]?.envKey;
 
     if (existingEnvKey) {
-      const existingKey = env[existingEnvKey];
-      const providerLabel = env.LLM_PROVIDER === 'custom'
+      // Check DB for existing key, fall back to .env
+      let existingKey = null;
+      try {
+        const { getConfigSecret } = await import('../lib/db/config.js');
+        existingKey = getConfigSecret(existingEnvKey);
+      } catch {}
+      if (!existingKey) existingKey = env?.[existingEnvKey] || null;
+
+      const providerLabel = existingLlmProvider === 'custom'
         ? 'Local (OpenAI Compatible API)'
-        : (PROVIDERS[env.LLM_PROVIDER]?.label || env.LLM_PROVIDER);
+        : (PROVIDERS[existingLlmProvider]?.label || existingLlmProvider);
       llmDisplay = existingKey
-        ? `${providerLabel} / ${env.LLM_MODEL} (${maskSecret(existingKey)})`
-        : `${providerLabel} / ${env.LLM_MODEL}`;
-      if ((env.LLM_PROVIDER === 'openai' || env.LLM_PROVIDER === 'custom') && env.OPENAI_BASE_URL) {
-        llmDisplay += ` @ ${env.OPENAI_BASE_URL}`;
+        ? `${providerLabel} / ${existingLlmModel} (${maskSecret(existingKey)})`
+        : `${providerLabel} / ${existingLlmModel}`;
+      const existingBaseUrl = env?.OPENAI_BASE_URL;
+      if ((existingLlmProvider === 'openai' || existingLlmProvider === 'custom') && existingBaseUrl) {
+        llmDisplay += ` @ ${existingBaseUrl}`;
       }
     }
   }
 
   if (llmDisplay && await keepOrReconfigure('LLM', llmDisplay)) {
     // Keep existing LLM config
-    chatProvider = env.LLM_PROVIDER;
-    chatModel = env.LLM_MODEL;
+    chatProvider = existingLlmProvider;
+    chatModel = existingLlmModel;
     const existingEnvKey = chatProvider === 'custom'
       ? 'CUSTOM_API_KEY'
       : PROVIDERS[chatProvider].envKey;
     collected.LLM_PROVIDER = chatProvider;
     collected.LLM_MODEL = chatModel;
-    collected[existingEnvKey] = env[existingEnvKey] || '';
-    if (env.OPENAI_BASE_URL) {
+    // Read existing API key from DB or .env
+    let existingApiKey = null;
+    try {
+      const { getConfigSecret } = await import('../lib/db/config.js');
+      existingApiKey = getConfigSecret(existingEnvKey);
+    } catch {}
+    if (!existingApiKey) existingApiKey = env?.[existingEnvKey] || '';
+    collected[existingEnvKey] = existingApiKey;
+    if (env?.OPENAI_BASE_URL) {
       openaiBaseUrl = env.OPENAI_BASE_URL;
       collected.OPENAI_BASE_URL = openaiBaseUrl;
     }
@@ -513,18 +575,33 @@ async function main() {
       // OAuth prompt — only when agent provider is Anthropic
       if (agentProviderConfig.oauthSupported) {
         let skipOAuth = false;
-        if (env?.CLAUDE_CODE_OAUTH_TOKEN) {
+        // Check DB first for existing OAuth token, then .env
+        let existingOAuth = null;
+        try {
+          const { getConfigSecret } = await import('../lib/db/config.js');
+          existingOAuth = getConfigSecret('CLAUDE_CODE_OAUTH_TOKEN');
+        } catch {}
+        if (!existingOAuth) existingOAuth = env?.CLAUDE_CODE_OAUTH_TOKEN || null;
+
+        if (existingOAuth) {
+          const existingBackend = env?.AGENT_BACKEND || 'claude-code';
           skipOAuth = await keepOrReconfigure(
             'Claude OAuth Token',
-            `${maskSecret(env.CLAUDE_CODE_OAUTH_TOKEN)} (agent backend: ${env.AGENT_BACKEND || 'claude-code'})`
+            `${maskSecret(existingOAuth)} (agent backend: ${existingBackend})`
           );
           if (skipOAuth) {
-            collected.CLAUDE_CODE_OAUTH_TOKEN = env.CLAUDE_CODE_OAUTH_TOKEN;
-            collected.AGENT_BACKEND = env.AGENT_BACKEND || 'claude-code';
+            collected.CLAUDE_CODE_OAUTH_TOKEN = existingOAuth;
+            collected.AGENT_BACKEND = existingBackend;
 
             // OAuth replaces the API key for agent jobs — don't push it to GitHub.
             if (collected.ANTHROPIC_API_KEY) {
-              updateEnvVariable('ANTHROPIC_API_KEY', collected.ANTHROPIC_API_KEY);
+              // Store API key in DB only (for chat), don't sync to GitHub
+              try {
+                const { setConfigSecret } = await import('../lib/db/config.js');
+                setConfigSecret('ANTHROPIC_API_KEY', collected.ANTHROPIC_API_KEY, 'setup');
+              } catch {
+                updateEnvVariable('ANTHROPIC_API_KEY', collected.ANTHROPIC_API_KEY);
+              }
               delete collected.ANTHROPIC_API_KEY;
             }
             delete collected['__agentApiKey'];
@@ -589,9 +666,14 @@ async function main() {
               collected.AGENT_BACKEND = 'claude-code';
 
               // OAuth replaces the API key for agent jobs — don't push it to GitHub.
-              // The key is still needed in .env for the event handler chat, so write it directly.
+              // The key is still needed for the event handler chat, so store it in DB directly.
               if (collected.ANTHROPIC_API_KEY) {
-                updateEnvVariable('ANTHROPIC_API_KEY', collected.ANTHROPIC_API_KEY);
+                try {
+                  const { setConfigSecret } = await import('../lib/db/config.js');
+                  setConfigSecret('ANTHROPIC_API_KEY', collected.ANTHROPIC_API_KEY, 'setup');
+                } catch {
+                  updateEnvVariable('ANTHROPIC_API_KEY', collected.ANTHROPIC_API_KEY);
+                }
                 delete collected.ANTHROPIC_API_KEY;
               }
               delete collected['__agentApiKey'];
@@ -783,8 +865,11 @@ async function main() {
       try {
         execSync('docker compose down && docker compose up -d', { stdio: 'inherit' });
         clack.log.success('Server restarted');
-      } catch {
-        clack.log.warn('Failed to restart. Run manually: docker compose down && docker compose up -d');
+      } catch (err) {
+        const output = (err.stderr || err.stdout || err.message || '').toString().trim();
+        clack.log.warn('Failed to restart.');
+        if (output) clack.log.error(output);
+        clack.log.info('Fix the issue above, then run: docker compose down && docker compose up -d');
       }
     }
   } else {
@@ -792,8 +877,11 @@ async function main() {
     try {
       execSync('docker compose up -d', { stdio: 'inherit' });
       clack.log.success('Server started');
-    } catch {
-      clack.log.warn('Failed to start. Run manually: docker compose up -d');
+    } catch (err) {
+      const output = (err.stderr || err.stdout || err.message || '').toString().trim();
+      clack.log.warn('Failed to start.');
+      if (output) clack.log.error(output);
+      clack.log.info('Fix the issue above, then run: docker compose up -d');
     }
   }
 
