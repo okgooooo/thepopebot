@@ -168,8 +168,8 @@ function buildDockerImage(projectPath) {
 
   // Replace npm install from registry with local tarball install
   dockerfile = dockerfile.replace(
-    /RUN npm install --omit=dev && \\\n\s+npm install --no-save thepopebot@\$\(node -p "require\('\.\/package\.json'\)\.version"\) && \\\n\s+npm install --no-save tailwindcss @tailwindcss\/postcss/,
-    'RUN npm install --omit=dev && \\\n    npm install --no-save /tmp/thepopebot.tgz && rm /tmp/thepopebot.tgz && \\\n    npm install --no-save tailwindcss @tailwindcss/postcss'
+    /RUN TPB_VERSION=.*\n\s+echo.*\n\s+npm install --no-save "thepopebot@\$\{TPB_VERSION\}" tailwindcss @tailwindcss\/postcss/,
+    'RUN echo \'{"private":true}\' > package.json && \\\n    npm install --no-save /tmp/thepopebot.tgz tailwindcss @tailwindcss/postcss && \\\n    rm /tmp/thepopebot.tgz'
   );
 
   // Read version from package.json
@@ -177,12 +177,21 @@ function buildDockerImage(projectPath) {
   const version = pkg.version;
   const imageTag = `stephengpope/thepopebot:event-handler-${version}`;
 
-  // Build using stdin Dockerfile with project dir as context (no cache to ensure fresh package)
-  execSync(`docker build --no-cache -f - -t ${imageTag} .`, {
-    input: dockerfile,
-    stdio: ['pipe', 'inherit', 'inherit'],
-    cwd: projectPath,
-  });
+  // Copy web/ to project for Docker build context
+  const webSrc = path.join(PACKAGE_DIR, 'web');
+  const webDest = path.join(projectPath, 'web');
+  fs.cpSync(webSrc, webDest, { recursive: true });
+
+  try {
+    // Build using stdin Dockerfile with project dir as context (no cache to ensure fresh package)
+    execSync(`docker build --no-cache -f - -t ${imageTag} .`, {
+      input: dockerfile,
+      stdio: ['pipe', 'inherit', 'inherit'],
+      cwd: projectPath,
+    });
+  } finally {
+    fs.rmSync(webDest, { recursive: true, force: true });
+  }
 
   // Update THEPOPEBOT_VERSION in .env
   const envPath = path.join(projectPath, '.env');

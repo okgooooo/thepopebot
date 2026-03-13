@@ -7,9 +7,10 @@ RUN apt-get update && \
 
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm install --omit=dev && \
-    npm install --no-save thepopebot@$(node -p "require('./package.json').version") && \
-    npm install --no-save tailwindcss @tailwindcss/postcss
+# Rename package to avoid npm treating "thepopebot" as a self-install
+RUN TPB_VERSION=$(node -p "require('./package.json').version") && \
+    echo "{\"private\":true}" > package.json && \
+    npm install --no-save "thepopebot@${TPB_VERSION}" tailwindcss @tailwindcss/postcss
 
 # ── Stage 2: Next.js build ───────────────────────────────────────
 FROM node:22-bookworm-slim AS nextjs
